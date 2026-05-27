@@ -1,0 +1,22 @@
+{
+  "name": "ws-outcome-check",
+  "version": "1.0.0",
+  "description": "Monitor live match WebSocket outcome updates and detect stale visible odds.",
+  "main": "scripts/live-market-ws-outcome-check.js",
+  "scripts": {
+    "check": "node --check scripts/live-market-ws-outcome-check.js && node --check scripts/live-market-ws-outcome-daemon.js",
+    "once": "node scripts/live-market-ws-outcome-daemon.js --once",
+    "daemon": "node scripts/live-market-ws-outcome-daemon.js"
+  },
+  "keywords": [
+    "websocket",
+    "playwright",
+    "odds",
+    "monitor"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}
