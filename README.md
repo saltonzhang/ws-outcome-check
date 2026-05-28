@@ -2,6 +2,8 @@
 
 Monitor live match WebSocket outcome updates and detect odds/outcomes that are still visible on the frontend after their `last_update` is older than the configured threshold.
 
+When the frontend exposes button identifiers such as `data-event-id`, `data-market-id`, `data-outcome-id`, `data-outcome-name`, `data-specifiers`, and `data-last-update`, the checker uses them for direct WS-to-DOM matching. If those attributes are missing, it falls back to text/odds matching.
+
 ## Install
 
 ```bash

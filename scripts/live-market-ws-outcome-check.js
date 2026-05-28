@@ -443,7 +443,7 @@ async function snapshotVisibleOutcomes(page, oddsSelector) {
 
     const buttons = [...document.querySelectorAll(selector)]
       .filter(visible)
-      .filter((button) => /\d+(?:\.\d+)?/.test(cleanText(button.innerText)));
+      .filter((button) => button.getAttribute("data-outcome-id") || /\d+(?:\.\d+)?/.test(cleanText(button.innerText)));
 
     return buttons.map((button, index) => {
       let rowRoot = button.parentElement || button;
@@ -477,6 +477,12 @@ async function snapshotVisibleOutcomes(page, oddsSelector) {
 
       return {
         index,
+        dataEventId: button.getAttribute("data-event-id") || "",
+        dataMarketId: button.getAttribute("data-market-id") || "",
+        dataOutcomeId: button.getAttribute("data-outcome-id") || "",
+        dataOutcomeName: normalize(button.getAttribute("data-outcome-name") || ""),
+        dataSpecifiers: cleanText(button.getAttribute("data-specifiers") || ""),
+        dataLastUpdate: Number(button.getAttribute("data-last-update") || 0),
         marketName: cleanText(marketHeader?.innerText).slice(0, 160),
         rowText: rowText.slice(0, 500),
         marketText: marketText.slice(0, 1000),
@@ -528,6 +534,14 @@ async function clickMarketTab(page, label) {
 }
 
 function visibleKey(item) {
+  if (item.dataOutcomeId) {
+    return [
+      item.dataEventId || "",
+      item.dataMarketId || "",
+      item.dataSpecifiers || "",
+      item.dataOutcomeId || "",
+    ].join("|");
+  }
   return [
     item.marketName || "",
     item.rowLine || item.rowText || "",
@@ -607,8 +621,21 @@ function marketMatches(outcome, dom) {
   return actual === expected;
 }
 
+function directIdentifierMatches(outcome, dom) {
+  if (!dom.dataMarketId || !dom.dataOutcomeId) return false;
+  if (String(outcome.marketId || "") !== String(dom.dataMarketId)) return false;
+  if (String(outcome.outcomeId || "") !== String(dom.dataOutcomeId)) return false;
+  if (dom.dataEventId && outcome.eventId && String(outcome.eventId) !== String(dom.dataEventId)) return false;
+
+  const expectedSpecifiers = String(outcome.specifiers || "");
+  const actualSpecifiers = String(dom.dataSpecifiers || "");
+  if (expectedSpecifiers || actualSpecifiers) return expectedSpecifiers === actualSpecifiers;
+  return true;
+}
+
 function scoreMatch(outcome, dom) {
   if (Number(outcome.active) !== 1) return 0;
+  if (directIdentifierMatches(outcome, dom)) return 220;
   if (!numbersClose(outcome.odds, dom.odds)) return 0;
   if (!marketMatches(outcome, dom)) return 0;
   if (!lineMatches(outcome, dom)) return 0;
@@ -675,6 +702,8 @@ function buildMarkdown(report) {
     visibleLine: item.visible.rowLine,
     visibleOutcome: item.visible.inferredOutcomeName,
     visibleOdd: item.visible.oddText,
+    visibleIds: [item.visible.dataMarketId, item.visible.dataSpecifiers, item.visible.dataOutcomeId].filter(Boolean).join(" / "),
+    domLastUpdate: formatDate(item.visible.dataLastUpdate),
   }));
 
   return [
@@ -719,6 +748,8 @@ function buildMarkdown(report) {
           { key: "visibleLine", label: "Visible Line" },
           { key: "visibleOutcome", label: "Visible Outcome" },
           { key: "visibleOdd", label: "Visible Odd" },
+          { key: "visibleIds", label: "Visible IDs" },
+          { key: "domLastUpdate", label: "DOM last_update" },
         ])
       : "_No stale visible outcomes captured._",
     "",
