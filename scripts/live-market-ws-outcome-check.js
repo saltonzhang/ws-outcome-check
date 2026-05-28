@@ -110,6 +110,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isNavigationContextError(error) {
+  return /execution context was destroyed|most likely because of a navigation|navigation/i.test(String(error?.message || error));
+}
+
 function clean(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -375,32 +379,40 @@ async function findMatchWithMarkets(page, oddsSelector, excludeMatchIds = new Se
   const deadline = Date.now() + 25000;
   const excluded = [...excludeMatchIds];
   while (Date.now() < deadline) {
-    const candidate = await page.evaluate(({ selector, excludedIds }) => {
-      const excludedSet = new Set(excludedIds);
-      const visible = (element) => {
-        const style = window.getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
-        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-      };
-      const cleanText = (value) => String(value || "").replace(/\s+/g, " ").trim();
-      for (const anchor of document.querySelectorAll('a[href*="/matches/"]')) {
-        const href = new URL(anchor.getAttribute("href"), location.href).toString();
-        const matchId = href.match(/\/matches\/([^/?#]+)/)?.[1] || "";
-        if (matchId && excludedSet.has(matchId)) continue;
-        let node = anchor;
-        for (let depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
-          const odds = [...node.querySelectorAll(selector)].filter(visible);
-          if (odds.length > 0) {
-            return {
-              href,
-              linkText: cleanText(anchor.innerText),
-              oddsCount: odds.length,
-            };
+    let candidate = null;
+    try {
+      candidate = await page.evaluate(({ selector, excludedIds }) => {
+        const excludedSet = new Set(excludedIds);
+        const visible = (element) => {
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+        };
+        const cleanText = (value) => String(value || "").replace(/\s+/g, " ").trim();
+        for (const anchor of document.querySelectorAll('a[href*="/matches/"]')) {
+          const href = new URL(anchor.getAttribute("href"), location.href).toString();
+          const matchId = href.match(/\/matches\/([^/?#]+)/)?.[1] || "";
+          if (matchId && excludedSet.has(matchId)) continue;
+          let node = anchor;
+          for (let depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+            const odds = [...node.querySelectorAll(selector)].filter(visible);
+            if (odds.length > 0) {
+              return {
+                href,
+                linkText: cleanText(anchor.innerText),
+                oddsCount: odds.length,
+              };
+            }
           }
         }
-      }
-      return null;
-    }, { selector: oddsSelector, excludedIds: excluded });
+        return null;
+      }, { selector: oddsSelector, excludedIds: excluded });
+    } catch (error) {
+      if (!isNavigationContextError(error)) throw error;
+      await page.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      continue;
+    }
     if (candidate) return candidate;
     await page.waitForTimeout(1000);
   }
@@ -866,6 +878,7 @@ async function main() {
     report.websocketUrls.push(socket.url());
     socket.on("framereceived", (frame) => {
       const parsed = parseWsFrame(frame);
+      if (!matchId) return;
       if (!jsonHasMatchId(parsed.json, matchId) && !parsed.text.includes(matchId)) return;
       report.wsMessagesForMatch += 1;
       if (isMatchEndMessage(parsed.json)) {
