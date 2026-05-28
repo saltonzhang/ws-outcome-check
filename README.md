@@ -43,7 +43,7 @@ node scripts/live-market-ws-outcome-check.js \
 
 ## Continuous Daemon
 
-This mode automatically picks a live match with markets, monitors it until `match_status=100` or max watch time, then switches to another match. Recently monitored match ids are skipped for a while so a finished match that remains on the list is not immediately picked again.
+This mode automatically picks a live match with markets, monitors it until `match_status=100`, consecutive DOM scans show no visible outcomes, or max watch time is reached, then switches to another match. Recently monitored match ids are skipped for a while so a finished match that remains on the list is not immediately picked again.
 
 ```bash
 node scripts/live-market-ws-outcome-daemon.js \
@@ -87,6 +87,8 @@ nohup node scripts/live-market-ws-outcome-daemon.js \
 - `--headed`: run visible Chromium.
 - `--no-expand`: do not expand collapsed market groups.
 - `--no-scan-tabs`: only scan the current market tab.
+- `--empty-visible-end-count <n>`: switch when visible outcomes stay at 0 for N consecutive scans in daemon/until-end mode. Default 5.
+- `--no-empty-visible-end`: disable the empty-visible switch condition.
 - `--lark-webhook <url>`: send a Lark text alert when the first violation appears. `LARK_WEBHOOK_URL` env is also supported.
 - `--output <file>`: JSON report path for single check.
 - `--output-dir <dir>`: report directory for daemon.

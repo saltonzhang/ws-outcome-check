@@ -18,6 +18,7 @@ function parseArgs(argv) {
     headed: false,
     expandMarkets: true,
     scanTabs: true,
+    emptyVisibleEndCount: 5,
     once: false,
     larkWebhook: process.env.LARK_WEBHOOK_URL || "",
   };
@@ -37,6 +38,8 @@ function parseArgs(argv) {
     else if (token === "--headed") args.headed = true;
     else if (token === "--no-expand") args.expandMarkets = false;
     else if (token === "--no-scan-tabs") args.scanTabs = false;
+    else if (token === "--empty-visible-end-count") args.emptyVisibleEndCount = Number(read());
+    else if (token === "--no-empty-visible-end") args.emptyVisibleEndCount = 0;
     else if (token === "--lark-webhook") args.larkWebhook = read();
     else if (token === "--once") args.once = true;
     else if (token === "--help" || token === "-h") {
@@ -55,6 +58,9 @@ function parseArgs(argv) {
     ["exclude window", args.excludeWindowSeconds],
   ]) {
     if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} seconds must be positive`);
+  }
+  if (!Number.isFinite(args.emptyVisibleEndCount) || args.emptyVisibleEndCount < 0) {
+    throw new Error("empty visible end count must be zero or positive");
   }
   return args;
 }
@@ -83,6 +89,8 @@ Options:
   --headed                       Run visible Chromium.
   --no-expand                    Do not expand collapsed market groups.
   --no-scan-tabs                 Only scan the current market tab.
+  --empty-visible-end-count <n>  Switch after N consecutive empty DOM scans. Default 5.
+  --no-empty-visible-end         Disable empty DOM scans as an end condition.
   --lark-webhook <url>           Lark bot webhook. Can also use LARK_WEBHOOK_URL env.
   --once                         Run one match and exit.
 `);
@@ -153,6 +161,8 @@ async function main() {
       "--interval-seconds",
       String(args.intervalSeconds),
       "--until-match-end",
+      "--empty-visible-end-count",
+      String(args.emptyVisibleEndCount),
       "--output",
       output,
     ];

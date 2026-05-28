@@ -22,6 +22,7 @@ function parseArgs(argv) {
     expandMarkets: true,
     scanTabs: true,
     untilMatchEnd: false,
+    emptyVisibleEndCount: 5,
     excludeMatchIds: new Set(),
     output: "",
     oddsSelector: DEFAULT_ODDS_SELECTOR,
@@ -48,6 +49,8 @@ function parseArgs(argv) {
     else if (token === "--no-expand") args.expandMarkets = false;
     else if (token === "--no-scan-tabs") args.scanTabs = false;
     else if (token === "--until-match-end") args.untilMatchEnd = true;
+    else if (token === "--empty-visible-end-count") args.emptyVisibleEndCount = Number(read());
+    else if (token === "--no-empty-visible-end") args.emptyVisibleEndCount = 0;
     else if (token === "--exclude-match-ids") {
       args.excludeMatchIds = new Set(
         String(read() || "")
@@ -70,6 +73,9 @@ function parseArgs(argv) {
     ["interval", args.intervalSeconds],
   ]) {
     if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} seconds must be positive`);
+  }
+  if (!Number.isFinite(args.emptyVisibleEndCount) || args.emptyVisibleEndCount < 0) {
+    throw new Error("empty visible end count must be zero or positive");
   }
   return args;
 }
@@ -100,6 +106,8 @@ Options:
   --no-expand                  Do not expand collapsed market groups.
   --no-scan-tabs               Only scan the currently selected market tab.
   --until-match-end            Stop this run when WS says match_status is 100.
+  --empty-visible-end-count <n> Stop after N consecutive empty DOM scans in until-match-end mode. Default 5.
+  --no-empty-visible-end       Disable empty DOM scans as an end condition.
   --exclude-match-ids <ids>    Comma separated match ids to skip when auto-picking.
   --output <file>              JSON report path.
   --lark-webhook <url>         Lark bot webhook. Can also use LARK_WEBHOOK_URL env.
@@ -849,6 +857,7 @@ async function main() {
     matchApiUrl: "",
     thresholdSeconds: args.thresholdSeconds,
     untilMatchEnd: args.untilMatchEnd,
+    emptyVisibleEndCount: args.emptyVisibleEndCount,
     matchEnded: false,
     matchEndAt: "",
     endReason: "",
@@ -873,6 +882,8 @@ async function main() {
   const seenViolationKeys = new Set();
   let captured = false;
   let matchEnded = false;
+  let emptyVisibleStreak = 0;
+  let emptyVisibleEnded = false;
 
   page.on("websocket", (socket) => {
     report.websocketUrls.push(socket.url());
@@ -944,6 +955,7 @@ async function main() {
       const visible = scan.visible;
       const stale = findStaleVisibleOutcomes([...outcomeMap.values()], visible, args.thresholdSeconds);
       report.lastVisibleCount = visible.length;
+      emptyVisibleStreak = visible.length === 0 ? emptyVisibleStreak + 1 : 0;
 
       for (const item of stale) {
         const key = `${item.outcome.key}|${item.visible.index}|${item.visible.oddText}`;
@@ -960,12 +972,23 @@ async function main() {
         tracked: outcomeMap.size,
         violations: stale.length,
         wsMessages: report.wsMessagesForMatch,
+        emptyVisibleStreak,
       });
       console.log(
         `snapshot visible=${visible.length} tabs=[${scan.tabs
           .map((item) => `${item.label}:${item.visible}`)
-          .join(",")}] tracked=${outcomeMap.size} violations=${stale.length} ws(match)=${report.wsMessagesForMatch}`,
+          .join(",")}] tracked=${outcomeMap.size} violations=${stale.length} ws(match)=${report.wsMessagesForMatch} emptyStreak=${emptyVisibleStreak}`,
       );
+
+      if (
+        args.untilMatchEnd &&
+        args.emptyVisibleEndCount > 0 &&
+        emptyVisibleStreak >= args.emptyVisibleEndCount
+      ) {
+        emptyVisibleEnded = true;
+        console.log(`match ended by empty visible outcomes streak=${emptyVisibleStreak}`);
+        break;
+      }
 
       if (stale.length > 0 && !captured) {
         captured = true;
@@ -976,9 +999,10 @@ async function main() {
       }
     }
 
-    report.endReason = args.untilMatchEnd && matchEnded ? "match_end" : "watch_timeout";
+    report.endReason = args.untilMatchEnd && matchEnded ? "match_end" : emptyVisibleEnded ? "empty_visible" : "watch_timeout";
     report.result = report.staleVisibleOutcomes.length > 0 ? "failed" : "passed";
     if (report.endReason === "match_end") report.notes.push("Stopped because WS reported match_status=100.");
+    if (report.endReason === "empty_visible") report.notes.push("Stopped because visible market outcomes stayed empty across consecutive scans.");
     if (report.endReason === "watch_timeout") report.notes.push("Stopped because watch time reached the configured maximum.");
     if (report.result === "failed") report.notes.push("WS outcome last_update exceeded threshold while a matching DOM button remained visible.");
     report.finalScreenshot = output.replace(/\.json$/i, ".png");
