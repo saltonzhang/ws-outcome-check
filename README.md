@@ -53,9 +53,23 @@ node scripts/live-market-ws-outcome-daemon.js \
   --cooldown-seconds 15
 ```
 
+With Lark alert:
+
+```bash
+export LARK_WEBHOOK_URL='https://open.larksuite.com/open-apis/bot/v2/hook/xxxx'
+
+node scripts/live-market-ws-outcome-daemon.js \
+  --url https://xp-match-pc-test1.helix.city/en/sports-live \
+  --threshold-minutes 5 \
+  --max-watch-minutes 360 \
+  --cooldown-seconds 15
+```
+
 Background run:
 
 ```bash
+export LARK_WEBHOOK_URL='https://open.larksuite.com/open-apis/bot/v2/hook/xxxx'
+
 nohup node scripts/live-market-ws-outcome-daemon.js \
   --url https://xp-match-pc-test1.helix.city/en/sports-live \
   --threshold-minutes 5 \
@@ -73,6 +87,7 @@ nohup node scripts/live-market-ws-outcome-daemon.js \
 - `--headed`: run visible Chromium.
 - `--no-expand`: do not expand collapsed market groups.
 - `--no-scan-tabs`: only scan the current market tab.
+- `--lark-webhook <url>`: send a Lark text alert when the first violation appears. `LARK_WEBHOOK_URL` env is also supported.
 - `--output <file>`: JSON report path for single check.
 - `--output-dir <dir>`: report directory for daemon.
 

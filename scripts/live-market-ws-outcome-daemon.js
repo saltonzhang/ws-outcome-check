@@ -19,6 +19,7 @@ function parseArgs(argv) {
     expandMarkets: true,
     scanTabs: true,
     once: false,
+    larkWebhook: process.env.LARK_WEBHOOK_URL || "",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -36,6 +37,7 @@ function parseArgs(argv) {
     else if (token === "--headed") args.headed = true;
     else if (token === "--no-expand") args.expandMarkets = false;
     else if (token === "--no-scan-tabs") args.scanTabs = false;
+    else if (token === "--lark-webhook") args.larkWebhook = read();
     else if (token === "--once") args.once = true;
     else if (token === "--help" || token === "-h") {
       printHelp();
@@ -81,6 +83,7 @@ Options:
   --headed                       Run visible Chromium.
   --no-expand                    Do not expand collapsed market groups.
   --no-scan-tabs                 Only scan the current market tab.
+  --lark-webhook <url>           Lark bot webhook. Can also use LARK_WEBHOOK_URL env.
   --once                         Run one match and exit.
 `);
 }
@@ -156,6 +159,7 @@ async function main() {
 
     const excludeIds = [...excluded.keys()];
     if (excludeIds.length > 0) childArgs.push("--exclude-match-ids", excludeIds.join(","));
+    if (args.larkWebhook) childArgs.push("--lark-webhook", args.larkWebhook);
     if (args.headed) childArgs.push("--headed");
     if (!args.expandMarkets) childArgs.push("--no-expand");
     if (!args.scanTabs) childArgs.push("--no-scan-tabs");

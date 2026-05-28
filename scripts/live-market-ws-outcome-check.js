@@ -25,6 +25,7 @@ function parseArgs(argv) {
     excludeMatchIds: new Set(),
     output: "",
     oddsSelector: DEFAULT_ODDS_SELECTOR,
+    larkWebhook: process.env.LARK_WEBHOOK_URL || "",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -42,6 +43,7 @@ function parseArgs(argv) {
     else if (token === "--interval-seconds") args.intervalSeconds = Number(read());
     else if (token === "--output") args.output = read();
     else if (token === "--odds-selector") args.oddsSelector = read();
+    else if (token === "--lark-webhook") args.larkWebhook = read();
     else if (token === "--headed") args.headed = true;
     else if (token === "--no-expand") args.expandMarkets = false;
     else if (token === "--no-scan-tabs") args.scanTabs = false;
@@ -100,6 +102,7 @@ Options:
   --until-match-end            Stop this run when WS says match_status is 100.
   --exclude-match-ids <ids>    Comma separated match ids to skip when auto-picking.
   --output <file>              JSON report path.
+  --lark-webhook <url>         Lark bot webhook. Can also use LARK_WEBHOOK_URL env.
 `);
 }
 
@@ -676,6 +679,51 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
+function formatViolationAlert(report, violation) {
+  const outcome = violation?.outcome || {};
+  const visible = violation?.visible || {};
+  return [
+    "[WS盘口过期仍显示告警]",
+    `比赛: ${report.matchId}`,
+    `阈值: ${report.thresholdSeconds}s`,
+    `盘口: ${outcome.marketName || ""}`,
+    `Market ID: ${outcome.marketId || ""}`,
+    `Line: ${outcome.specifiers || ""}`,
+    `Outcome: ${outcome.outcomeName || ""}`,
+    `Outcome ID: ${outcome.outcomeId || ""}`,
+    `Odds: ${outcome.odds ?? ""}`,
+    `last_update: ${formatDate(outcome.lastUpdate)}`,
+    `已过期: ${violation?.ageSeconds ?? ""}s`,
+    `前端按钮ID: ${[visible.dataMarketId, visible.dataSpecifiers, visible.dataOutcomeId].filter(Boolean).join(" / ")}`,
+    `前端显示: ${visible.marketName || ""} ${visible.rowLine || ""} ${visible.inferredOutcomeName || ""} ${visible.oddText || ""}`.trim(),
+    `详情页: ${report.detailUrl}`,
+    `证据截图: ${report.violationScreenshot || ""}`,
+    `JSON报告: ${report.jsonReport || ""}`,
+    `MD报告: ${report.markdownReport || ""}`,
+  ].join("\n");
+}
+
+async function sendLarkText(webhook, text) {
+  if (!webhook) return false;
+  try {
+    const response = await fetch(webhook, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        msg_type: "text",
+        content: { text },
+      }),
+    });
+    const body = await response.text();
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${body.slice(0, 300)}`);
+    console.log(`lark alert sent status=${response.status}`);
+    return true;
+  } catch (error) {
+    console.error(`lark alert failed: ${error.message}`);
+    return false;
+  }
+}
+
 function markdownTable(rows, columns) {
   const cell = (value) => String(value ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
   return [
@@ -806,6 +854,7 @@ async function main() {
     finalScreenshot: "",
     jsonReport: output,
     markdownReport: output.replace(/\.json$/i, ".md"),
+    larkAlertSent: false,
     notes: [],
   };
 
@@ -910,6 +959,7 @@ async function main() {
         report.violationScreenshot = output.replace(/\.json$/i, "-violation.png");
         await page.screenshot({ path: report.violationScreenshot, fullPage: true }).catch(() => {});
         console.log(`violation evidence screenshot=${report.violationScreenshot}`);
+        report.larkAlertSent = await sendLarkText(args.larkWebhook, formatViolationAlert(report, stale[0]));
       }
     }
 
