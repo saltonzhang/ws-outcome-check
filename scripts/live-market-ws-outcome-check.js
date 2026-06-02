@@ -869,6 +869,11 @@ function buildMarkdown(report) {
   ].join("\n");
 }
 
+function writeReportFiles(report, output) {
+  fs.writeFileSync(output, JSON.stringify(report, null, 2));
+  fs.writeFileSync(report.markdownReport, buildMarkdown(report));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const startedAt = Date.now();
@@ -1029,7 +1034,11 @@ async function main() {
         report.violationScreenshot = output.replace(/\.json$/i, "-violation.png");
         await page.screenshot({ path: report.violationScreenshot, fullPage: true }).catch(() => {});
         console.log(`violation evidence screenshot=${report.violationScreenshot}`);
+        report.result = "failed";
+        report.notes.push("Interim report written immediately after first stale visible outcome.");
+        writeReportFiles(report, output);
         report.larkAlertSent = await sendLarkText(args.larkWebhook, formatViolationAlert(report, stale[0]));
+        writeReportFiles(report, output);
       }
     }
 
@@ -1044,8 +1053,7 @@ async function main() {
   } finally {
     report.finishedAt = new Date().toISOString();
     report.durationSeconds = Math.floor((Date.now() - startedAt) / 1000);
-    fs.writeFileSync(output, JSON.stringify(report, null, 2));
-    fs.writeFileSync(report.markdownReport, buildMarkdown(report));
+    writeReportFiles(report, output);
     await browser.close();
     console.log(`报告: ${output}`);
     console.log(`证据: ${report.markdownReport}`);
