@@ -119,7 +119,9 @@ function sleep(ms) {
 }
 
 function isNavigationContextError(error) {
-  return /execution context was destroyed|most likely because of a navigation|navigation/i.test(String(error?.message || error));
+  return /execution context was destroyed|most likely because of a navigation|net::ERR_ABORTED|navigation/i.test(
+    String(error?.message || error),
+  );
 }
 
 function clean(value) {
@@ -155,8 +157,40 @@ function deriveApiUrl(args, matchId, detailUrl) {
     const parsed = new URL(source);
     const found = parsed.hostname.match(/^xp-match-pc-(.+)\.helix\.city$/);
     if (found) return `${parsed.protocol}//xp-service-${found[1]}-api.helix.city/v1/match/${matchId}`;
+    if (parsed.hostname === "gotobet.com" || parsed.hostname === "www.gotobet.com") {
+      return "https://xp-service-api.gotobet.com/v1/match/" + matchId;
+    }
   } catch (_) {}
   return "";
+}
+
+function isSameNavigationTarget(currentUrl, targetUrl) {
+  try {
+    const current = new URL(currentUrl);
+    const target = new URL(targetUrl);
+    return current.origin === target.origin && current.pathname === target.pathname;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function gotoWithRetry(page, url, options = {}) {
+  const attempts = options.attempts || 3;
+  const timeout = options.timeout || 60000;
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isNavigationContextError(error)) throw error;
+      await page.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => {});
+      if (isSameNavigationTarget(page.url(), url)) return;
+      await page.waitForTimeout(1000);
+    }
+  }
+  throw lastError;
 }
 
 function frameToBuffer(frame) {
@@ -909,20 +943,20 @@ async function main() {
     if (args.matchUrl) {
       report.detailUrl = args.matchUrl;
       console.log(`打开指定比赛详情: ${args.matchUrl}`);
-      await page.goto(args.matchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await gotoWithRetry(page, args.matchUrl);
     } else if (matchId) {
       report.detailUrl = detailUrlForMatch(args.url, matchId);
       console.log(`打开指定比赛详情: ${report.detailUrl}`);
-      await page.goto(report.detailUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await gotoWithRetry(page, report.detailUrl);
     } else {
       console.log(`打开直播列表: ${args.url}`);
-      await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await gotoWithRetry(page, args.url);
       const candidate = await findMatchWithMarkets(page, args.oddsSelector, args.excludeMatchIds);
       matchId = matchIdFromUrl(candidate.href);
       report.matchId = matchId;
       report.detailUrl = candidate.href;
       console.log(`选中有盘口比赛: ${matchId} ${candidate.linkText}`);
-      await page.goto(candidate.href, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await gotoWithRetry(page, candidate.href);
     }
 
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
